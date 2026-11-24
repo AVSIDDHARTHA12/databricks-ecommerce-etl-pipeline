@@ -58,6 +58,9 @@ events. All five notebook cells succeeded. The data-quality checks reported
 45,608 fact rows, with zero null or duplicate order IDs, invalid amounts, or
 missing customer/product references. The KPI table contained 1,825 rows.
 
+The executed Databricks notebook, including its cell outputs, is available at
+[`notebooks/ecommerce_etl_pipeline_output.ipynb`](notebooks/ecommerce_etl_pipeline_output.ipynb).
+
 Sample rows from the Databricks KPI output:
 
 | Order date | Category | Orders | Unique customers | Net revenue | Returned | Return rate |
@@ -106,6 +109,7 @@ ecommerce_etl/
   pipeline.py        # Raw ingestion, cleansing, Delta MERGE, warehouse, KPIs, DQ
 notebooks/
   ecommerce_etl_pipeline.py
+  ecommerce_etl_pipeline_output.ipynb
   run_pipeline_tests.py
 tests/
   test_generate_data.py
