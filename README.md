@@ -19,7 +19,8 @@ The generator uses fake customer names and `example.com` email addresses; it
 does not use real customer data. Every run receives a batch ID so raw records
 can be traced to their ingestion batch. Curated orders and facts use Delta
 `MERGE` keyed by `order_id`, so rerunning a batch does not create duplicate
-warehouse orders. Invalid rows are retained in a quarantine table with reasons.
+warehouse orders. Invalid rows are retained in a quarantine table with reasons;
+replaying the same quarantined source event does not add another row.
 
 ## Run on Databricks
 
@@ -40,37 +41,48 @@ warehouse orders. Invalid rows are retained in a quarantine table with reasons.
    DESCRIBE HISTORY ecommerce_dw.curated_orders;
    ```
 
-The notebook generates fresh input data and runs every stage in order. It
-prints the batch ID, counts, and data-quality results. A Databricks run on
-November 24, 2026 completed successfully: every code cell succeeded, the KPI
-table displayed 1,825 rows, and the quarantine preview displayed 50 sample
-rows.
+`net_revenue` sums `gross_amount` only for `COMPLETED` orders. The generated
+source assigns one terminal status to each order and does not provide a
+completed-then-returned event history, so a `RETURNED` order is counted
+separately rather than subtracted from completed revenue. `return_rate_pct` is
+the number of returned orders divided by all fact orders in that date/category
+group.
 
-Sample rows from the displayed KPI output:
+## Databricks validation output
 
-| order_date | category | total_orders | unique_customers | net_revenue | returned_orders | return_rate_pct |
+The pipeline was run on Databricks Serverless using the isolated schema
+`ecommerce_dw_validation` and raw path
+`/Volumes/workspace/default/ecommerce_etl_raw/validation-run-2026-11-24`.
+The generated batch contained 7,500 customers, 350 products, and 52,492 order
+events. All five notebook cells succeeded. The data-quality checks reported
+45,608 fact rows, with zero null or duplicate order IDs, invalid amounts, or
+missing customer/product references. The KPI table contained 1,825 rows.
+
+Sample rows from the Databricks KPI output:
+
+| Order date | Category | Orders | Unique customers | Net revenue | Returned | Return rate |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 2025-01-01 | Books | 24 | 24 | 41030.81 | 7 | 29.17 |
-| 2025-01-01 | Electronics | 30 | 30 | 98540.37 | 5 | 16.67 |
-| 2025-01-01 | Fashion | 21 | 21 | -6686.28 | 6 | 28.57 |
-| 2025-01-01 | Fitness | 17 | 17 | 111090.07 | 2 | 11.76 |
-| 2025-01-01 | Home & Kitchen | 29 | 29 | 216344.35 | 3 | 10.34 |
+| 2025-01-01 | Books | 24 | 24 | 168,677.98 | 7 | 29.17% |
+| 2025-01-01 | Electronics | 30 | 30 | 190,531.80 | 5 | 16.67% |
+| 2025-01-01 | Fashion | 21 | 21 | 106,002.63 | 6 | 28.57% |
+| 2025-01-01 | Fitness | 17 | 17 | 122,354.55 | 2 | 11.76% |
+| 2025-01-01 | Home & Kitchen | 29 | 29 | 299,207.10 | 3 | 10.34% |
 
-The quarantine preview contains the intentionally malformed source records
-(such as invalid quantities, timestamps, prices, and missing customer IDs).
+## Tests
 
-## Run the generator tests locally
-
-The generator tests use only the Python standard library:
+Run the local tests with:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-Running the Spark pipeline itself requires a Databricks cluster with Delta
-Lake. For local Spark execution, install a compatible Java runtime, PySpark,
-and Delta Lake version for your Spark release, then configure a Spark session
-with Delta extensions and catalog settings.
+The generator tests use only the Python standard library. The Spark/Delta
+integration tests cover cleansing and quarantine, duplicate-event selection,
+batch replay idempotency, late events, and revenue/return KPIs. Run them on
+Databricks by opening [`notebooks/run_pipeline_tests.py`](notebooks/run_pipeline_tests.py)
+and selecting **Run all**. They are skipped by local discovery when PySpark is
+not installed. Local Spark execution requires compatible Java, PySpark, and
+Delta Lake versions plus a configured Delta-enabled Spark session.
 
 ## Data contracts
 
@@ -83,8 +95,8 @@ with Delta extensions and catalog settings.
 Valid orders must have an order ID, customer ID, product ID, positive quantity
 and price, a parseable timestamp, and a known status. Supported statuses are
 `PENDING`, `COMPLETED`, `CANCELLED`, and `RETURNED`. Duplicate order events are
-resolved by latest event timestamp, then ingestion timestamp. Older late
-events cannot replace a newer curated order.
+resolved by latest event timestamp, then ingestion timestamp and source path.
+Older late events cannot replace a newer curated order.
 
 ## Project layout
 
@@ -94,6 +106,8 @@ ecommerce_etl/
   pipeline.py        # Raw ingestion, cleansing, Delta MERGE, warehouse, KPIs, DQ
 notebooks/
   ecommerce_etl_pipeline.py
+  run_pipeline_tests.py
 tests/
   test_generate_data.py
+  test_pipeline_spark.py
 ```

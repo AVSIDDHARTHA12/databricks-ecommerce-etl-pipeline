@@ -3,6 +3,20 @@
 from typing import Any
 
 
+QUARANTINE_KEY_COLUMNS = (
+    "batch_id",
+    "source_file",
+    "order_id",
+    "customer_id",
+    "product_id",
+    "quantity",
+    "unit_price_raw",
+    "order_timestamp_raw",
+    "city",
+    "order_status",
+)
+
+
 def _qualified(database: str, table: str) -> str:
     safe_database = database.replace("`", "``")
     return f"`{safe_database}`.`{table}`"
@@ -55,12 +69,10 @@ def ingest_raw(spark: Any, raw_path: str, database: str, batch_id: str) -> None:
         audited.write.format("delta").mode("append").saveAsTable(_qualified(database, table))
 
 
-def curate_orders(spark: Any, database: str, batch_id: str) -> None:
-    from delta.tables import DeltaTable
+def prepare_order_batch(raw: Any) -> tuple[Any, Any]:
     from pyspark.sql import functions as F
     from pyspark.sql.window import Window
 
-    raw = spark.table(_qualified(database, "raw_orders")).filter(F.col("batch_id") == batch_id)
     cleaned = (
         raw.withColumn(
             "unit_price_clean",
@@ -109,9 +121,6 @@ def curate_orders(spark: Any, database: str, batch_id: str) -> None:
         .withColumn("quarantine_reason", reasons)
         .withColumn("quarantined_at", F.current_timestamp())
     )
-    quarantine.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(
-        _qualified(database, "quarantine_orders")
-    )
 
     order_window = Window.partitionBy("order_id").orderBy(
         F.col("order_ts").desc(), F.col("ingested_at").desc(), F.col("source_file").desc()
@@ -126,6 +135,37 @@ def curate_orders(spark: Any, database: str, batch_id: str) -> None:
         .withColumn("order_date", F.to_date("order_ts"))
         .withColumn("processed_at", F.current_timestamp())
     )
+    return deduped, quarantine
+
+
+def _upsert_quarantine(spark: Any, database: str, quarantine: Any) -> None:
+    from delta.tables import DeltaTable
+
+    target_name = f"{database}.quarantine_orders"
+    source = quarantine.dropDuplicates(list(QUARANTINE_KEY_COLUMNS))
+    if not spark.catalog.tableExists(target_name):
+        source.write.format("delta").mode("overwrite").saveAsTable(_qualified(database, "quarantine_orders"))
+        return
+
+    match_condition = " AND ".join(
+        f"tgt.`{column}` <=> src.`{column}`" for column in QUARANTINE_KEY_COLUMNS
+    )
+    (
+        DeltaTable.forName(spark, target_name)
+        .alias("tgt")
+        .merge(source.alias("src"), match_condition)
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+
+
+def curate_orders(spark: Any, database: str, batch_id: str) -> None:
+    from delta.tables import DeltaTable
+    from pyspark.sql import functions as F
+
+    raw = spark.table(_qualified(database, "raw_orders")).filter(F.col("batch_id") == batch_id)
+    deduped, quarantine = prepare_order_batch(raw)
+    _upsert_quarantine(spark, database, quarantine)
 
     target_name = _qualified(database, "curated_orders")
     if not spark.catalog.tableExists(f"{database}.curated_orders"):
@@ -315,13 +355,7 @@ def build_kpis(spark: Any, database: str) -> None:
             p.category,
             COUNT(DISTINCT f.order_id) AS total_orders,
             COUNT(DISTINCT f.customer_sk) AS unique_customers,
-            SUM(
-                CASE
-                    WHEN f.order_status = 'COMPLETED' THEN f.gross_amount
-                    WHEN f.order_status = 'RETURNED' THEN -f.gross_amount
-                    ELSE 0
-                END
-            ) AS net_revenue,
+            SUM(CASE WHEN f.order_status = 'COMPLETED' THEN f.gross_amount ELSE 0 END) AS net_revenue,
             SUM(CASE WHEN f.order_status = 'RETURNED' THEN 1 ELSE 0 END) AS returned_orders,
             ROUND(
                 SUM(CASE WHEN f.order_status = 'RETURNED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*),
