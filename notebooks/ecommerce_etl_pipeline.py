@@ -24,7 +24,8 @@ from ecommerce_etl.pipeline import run_pipeline
 
 # COMMAND ----------
 
-dbutils.widgets.text("raw_path", "dbfs:/tmp/ecommerce_etl_demo/raw")
+# DBTITLE 1,Configure widgets and generate raw data
+dbutils.widgets.text("raw_path", "/Volumes/workspace/default/ecommerce_etl_raw/raw")
 dbutils.widgets.text("database", "ecommerce_dw")
 dbutils.widgets.text("order_count", "50000")
 

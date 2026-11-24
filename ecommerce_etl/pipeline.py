@@ -50,7 +50,7 @@ def ingest_raw(spark: Any, raw_path: str, database: str, batch_id: str) -> None:
         audited = (
             source.withColumn("batch_id", F.lit(batch_id))
             .withColumn("ingested_at", F.current_timestamp())
-            .withColumn("source_file", F.input_file_name())
+            .withColumn("source_file", F.expr("_metadata.file_path"))
         )
         audited.write.format("delta").mode("append").saveAsTable(_qualified(database, table))
 

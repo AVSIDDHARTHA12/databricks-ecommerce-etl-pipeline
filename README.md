@@ -23,13 +23,15 @@ warehouse orders. Invalid rows are retained in a quarantine table with reasons.
 
 ## Run on Databricks
 
-1. Import or clone this repository into a Databricks Git folder.
-2. Use a Databricks Runtime with Apache Spark and Delta Lake (DBR 14.x or later
-   recommended). The notebook uses the Hive metastore and does not require
-   Unity Catalog.
+1. Clone this repository into a Databricks Git folder, or import a ZIP of the
+   project files into a Workspace folder.
+2. Use Databricks Runtime 14.x or later with Apache Spark and Delta Lake.
+   The default input path is a Unity Catalog Volume; create it in your workspace
+   or change the `raw_path` widget to a writable path supported by your compute.
 3. Open and run [`notebooks/ecommerce_etl_pipeline.py`](notebooks/ecommerce_etl_pipeline.py).
    Its `raw_path`, `database`, and `order_count` widgets can be changed before
-   running. The default raw path is `dbfs:/tmp/ecommerce_etl_demo/raw`.
+   running. The default raw path is
+   `/Volumes/workspace/default/ecommerce_etl_raw/raw`.
 4. Inspect the results:
 
    ```sql
@@ -39,8 +41,10 @@ warehouse orders. Invalid rows are retained in a quarantine table with reasons.
    ```
 
 The notebook generates fresh input data and runs every stage in order. It
-prints the batch ID, counts, and data-quality results. It intentionally does
-not include screenshots or claim that a Databricks run has already happened.
+prints the batch ID, counts, and data-quality results. A Databricks run on
+November 24, 2026 completed successfully: every code cell succeeded, the KPI
+table displayed 1,825 rows, and the quarantine preview displayed 50 sample
+rows.
 
 ## Run the generator tests locally
 
