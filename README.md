@@ -46,6 +46,19 @@ November 24, 2026 completed successfully: every code cell succeeded, the KPI
 table displayed 1,825 rows, and the quarantine preview displayed 50 sample
 rows.
 
+Sample rows from the displayed KPI output:
+
+| order_date | category | total_orders | unique_customers | net_revenue | returned_orders | return_rate_pct |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2025-01-01 | Books | 24 | 24 | 41030.81 | 7 | 29.17 |
+| 2025-01-01 | Electronics | 30 | 30 | 98540.37 | 5 | 16.67 |
+| 2025-01-01 | Fashion | 21 | 21 | -6686.28 | 6 | 28.57 |
+| 2025-01-01 | Fitness | 17 | 17 | 111090.07 | 2 | 11.76 |
+| 2025-01-01 | Home & Kitchen | 29 | 29 | 216344.35 | 3 | 10.34 |
+
+The quarantine preview contains the intentionally malformed source records
+(such as invalid quantities, timestamps, prices, and missing customer IDs).
+
 ## Run the generator tests locally
 
 The generator tests use only the Python standard library:
